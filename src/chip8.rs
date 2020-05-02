@@ -2,6 +2,7 @@ extern crate rand;
 
 use rand::Rng;
 
+#[allow(dead_code)]
 pub struct Chip8 {
     // the currently proccessed instruction code
     opcode: u16,
@@ -30,6 +31,7 @@ pub struct Chip8 {
     keyboard: [bool; 16],
 }
 
+#[allow(dead_code)]
 impl Chip8 {
     pub fn new() -> Chip8 {
         Chip8 {
@@ -66,7 +68,10 @@ impl Chip8 {
             }
             0x0000..=0x0fff => {
                 self.pc = self.opcode & 0x0fff;
-                println!("jump to old machine code routine at {}", self.opcode & 0x0fff);
+                println!(
+                    "jump to old machine code routine at {}",
+                    self.opcode & 0x0fff
+                );
             }
             0x1000..=0x1fff => {
                 self.pc = self.opcode & 0x0fff;
@@ -181,7 +186,7 @@ impl Chip8 {
                 let mut rng = rand::thread_rng();
                 self.v[((self.opcode & 0x0f00) >> 8) as usize] =
                     (rng.gen_range(0, 256) & self.opcode & 0x00ff) as u8;
-            },
+            }
             0xd000..=0xdfff => {
                 let x = ((self.opcode & 0x0f00) >> 8) as usize;
                 let y = ((self.opcode & 0x00f0) >> 4) as usize;
@@ -189,8 +194,10 @@ impl Chip8 {
 
                 let end_slice = (self.index + n) as usize;
                 let sprite = &self.memory[(self.index as usize)..end_slice];
-            },
-            _ => {},
+            }
+            _ => {
+                panic!("unimplemented opcode: {}", self.opcode);
+            }
         }
     }
 }
@@ -199,4 +206,13 @@ impl std::fmt::Debug for Chip8 {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{:?}", self.v)
     }
+}
+
+#[allow(non_snake_case)]
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_SYS_add() {}
 }
