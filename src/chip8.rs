@@ -1,6 +1,6 @@
 extern crate rand;
 
-use rand::{Rng, thread_rng, prelude::ThreadRng};
+use rand::{prelude::ThreadRng, thread_rng, Rng};
 
 #[allow(dead_code)]
 pub struct Chip8 {
@@ -49,14 +49,8 @@ impl Chip8 {
         }
     }
 
-    pub fn test_drawing(&mut self){
-        let sprite = [
-            0b00011111,
-            0b00010101,
-            0b00011011,
-            0b00010101,
-            0b00011111,
-        ];
+    pub fn test_drawing(&mut self) {
+        let sprite = [0b00011111, 0b00010101, 0b00011011, 0b00010101, 0b00011111];
         self.index = 0x10;
         self.memory[0x10..0x15].clone_from_slice(&sprite);
         self.opcode = 0xd015;
@@ -211,18 +205,56 @@ impl Chip8 {
 
                 let end_slice = (self.index + n) as usize;
                 let sprite = &self.memory[(self.index as usize)..end_slice];
-                for xx in 0..8{
-                    for yy in 0..sprite.len(){
+                for xx in 0..8 {
+                    for yy in 0..sprite.len() {
                         let gx = (x as usize + xx) % 64;
                         let gy = (y as usize + yy) % 32;
 
                         let pixel = (sprite[yy] & (1 << xx)) != 0;
-                        if self.gfx[gy * 64 + gx]{
+                        if self.gfx[gy * 64 + gx] {
                             self.v[0xf] = 1;
                         }
                         self.gfx[gy * 64 + gx] = self.gfx[gy * 64 + gx] ^ pixel;
                         println!("drawing at x: {}, y: {}", gx, gy);
                     }
+                }
+            }
+            0xe000..=0xefff => {
+                let x = (self.opcode & 0x0f00 >> 8) as usize;
+                match self.opcode & 0x00ff {
+                    0x9e => {
+                        if self.keyboard[self.v[x] as usize] {
+                            self.pc += 2;
+                        }
+                    }
+                    0xa1 => {
+                        if !self.keyboard[self.v[x] as usize] {
+                            self.pc += 2;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            0xf000..=0xffff => {
+                let x = (self.opcode & 0x0f00 >> 8) as usize;
+                match self.opcode & 0x00ff {
+                    0x07 => {
+                        self.v[x] = self.delay_timer;
+                    }
+                    0x0a => {
+                        // wait for a key press
+                        if self.keyboard.contains(&true) {
+                            self.v[x] = self.keyboard.iter().position(|&x| x).unwrap() as u8;
+                        }
+                    }
+                    0x15 => {}
+                    0x18 => {}
+                    0x1e => {}
+                    0x29 => {}
+                    0x33 => {}
+                    0x55 => {}
+                    0x65 => {}
+                    _ => {}
                 }
             }
             _ => {
@@ -456,10 +488,7 @@ mod tests {
             let res = chip.v[2].wrapping_sub(chip.v[4]);
             chip.process_opcode();
             assert_eq!(chip.v[2], res);
-            assert_eq!(
-                chip.v[0xf],
-                vf
-            );
+            assert_eq!(chip.v[0xf], vf);
         }
 
         // test and vx vy
@@ -474,11 +503,7 @@ mod tests {
             let res = chip.v[2].wrapping_sub(chip.v[4]);
             chip.process_opcode();
             assert_eq!(chip.v[2], res);
-            assert_eq!(
-                chip.v[0xf],
-                vf
-            );
+            assert_eq!(chip.v[0xf], vf);
         }
     }
-
 }
