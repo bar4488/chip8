@@ -1,6 +1,6 @@
 extern crate rand;
 
-use rand::Rng;
+use rand::{Rng, thread_rng, prelude::ThreadRng};
 
 #[allow(dead_code)]
 pub struct Chip8 {
@@ -49,6 +49,22 @@ impl Chip8 {
         }
     }
 
+    pub fn test_drawing(&mut self){
+        let sprite = [
+            0b00011111,
+            0b00010101,
+            0b00011011,
+            0b00010101,
+            0b00011111,
+        ];
+        self.index = 0x10;
+        self.memory[0x10..0x15].clone_from_slice(&sprite);
+        self.opcode = 0xd015;
+        self.v[0] = 0x5;
+        self.v[1] = 0x3;
+        self.process_opcode();
+    }
+
     pub fn cycle(&mut self) {
         let mut rng = rand::thread_rng();
         let i = rng.gen_range(0, 64 * 32);
@@ -62,7 +78,7 @@ impl Chip8 {
                 println!("clear display");
             }
             0x00ee => {
-                self.pc = self.stack[self.sp as usize];
+                self.pc = self.stack[(self.sp - 1) as usize];
                 self.sp -= 1;
                 println!("return from subroutine");
             }
@@ -85,35 +101,36 @@ impl Chip8 {
                 println!("call subroutine at addr {}", self.opcode & 0x0fff);
             }
             0x3000..=0x3fff => {
-                if self.v[((self.opcode & 0x0f00) >> 2) as usize] == (self.opcode & 0x00ff) as u8 {
+                if self.v[((self.opcode & 0x0f00) >> 8) as usize] == (self.opcode & 0x00ff) as u8 {
                     self.pc += 2;
                 }
                 println!(
                     "skip if v{} = {}",
-                    self.opcode & 0x0f00,
+                    (self.opcode & 0x0f00) >> 8,
                     self.opcode & 0x00ff
                 );
             }
             0x4000..=0x4fff => {
-                if self.v[((self.opcode & 0x0f00) >> 2) as usize] != (self.opcode & 0x00ff) as u8 {
+                if self.v[((self.opcode & 0x0f00) >> 8) as usize] != (self.opcode & 0x00ff) as u8 {
                     self.pc += 2;
                 }
                 println!(
-                    "skip if v{} != {}",
-                    self.opcode & 0x0f00,
-                    self.opcode & 0x0fff
+                    "skip if v{}({}) != {}",
+                    (self.opcode & 0x0f00) >> 8,
+                    self.v[((self.opcode & 0x0f00) >> 8) as usize],
+                    self.opcode & 0x00ff
                 );
             }
             0x5000..=0x5fff => {
                 if self.v[((self.opcode & 0x0f00) >> 8) as usize]
-                    != self.v[((self.opcode & 0x00f0) >> 4) as usize]
+                    == self.v[((self.opcode & 0x00f0) >> 4) as usize]
                 {
                     self.pc += 2;
                 }
                 println!(
                     "skip if v{} = v{}",
-                    self.opcode & 0x0f00,
-                    self.opcode & 0x00f0
+                    (self.opcode & 0x0f00) >> 8,
+                    (self.opcode & 0x00f0) >> 4
                 );
             }
             0x6000..=0x6fff => {
@@ -188,12 +205,25 @@ impl Chip8 {
                     (rng.gen_range(0, 256) & self.opcode & 0x00ff) as u8;
             }
             0xd000..=0xdfff => {
-                let x = ((self.opcode & 0x0f00) >> 8) as usize;
-                let y = ((self.opcode & 0x00f0) >> 4) as usize;
+                let x = self.v[((self.opcode & 0x0f00) >> 8) as usize];
+                let y = self.v[((self.opcode & 0x00f0) >> 4) as usize];
                 let n = self.opcode & 0x000f;
 
                 let end_slice = (self.index + n) as usize;
                 let sprite = &self.memory[(self.index as usize)..end_slice];
+                for xx in 0..8{
+                    for yy in 0..sprite.len(){
+                        let gx = (x as usize + xx) % 64;
+                        let gy = (y as usize + yy) % 32;
+
+                        let pixel = (sprite[yy] & (1 << xx)) != 0;
+                        if self.gfx[gy * 64 + gx]{
+                            self.v[0xf] = 1;
+                        }
+                        self.gfx[gy * 64 + gx] = self.gfx[gy * 64 + gx] ^ pixel;
+                        println!("drawing at x: {}, y: {}", gx, gy);
+                    }
+                }
             }
             _ => {
                 panic!("unimplemented opcode: {}", self.opcode);
@@ -214,5 +244,241 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_SYS_add() {}
+    fn test_jump_opcode() {
+        let mut chip = Chip8::new();
+
+        // assert SYS addr opcode is working
+        chip.opcode = 0x1111;
+        chip.process_opcode();
+        assert_eq!(chip.pc, 0x0111);
+
+        // assert JP addr opcode is working
+        chip.opcode = 0x0134;
+        chip.process_opcode();
+        assert_eq!(chip.pc, 0x0134);
+    }
+
+    #[test]
+    fn test__subroutine() {
+        let mut chip = Chip8::new();
+        chip.pc = 0x0111;
+
+        // test calling a subroutine
+        let previous_pc = chip.pc;
+        chip.opcode = 0x2123;
+        chip.process_opcode();
+        assert_eq!(chip.pc, 0x0123);
+        assert_eq!(chip.sp, 1);
+        assert_eq!(chip.stack[(chip.sp - 1) as usize], previous_pc);
+
+        // test returning from a subroutine
+        chip.opcode = 0x00ee;
+        chip.process_opcode();
+        assert_eq!(chip.pc, 0x0111);
+        assert_eq!(chip.sp, 0);
+    }
+
+    #[test]
+    fn test_skip_equal_vxb() {
+        let mut chip = Chip8::new();
+        chip.pc = 0x0111;
+
+        // test skip equal
+        let previous_pc = chip.pc;
+        chip.opcode = 0x3244;
+        chip.process_opcode();
+        assert_eq!(chip.pc, previous_pc);
+
+        chip.v[2] = 0x44;
+        chip.process_opcode();
+        assert_eq!(chip.pc, previous_pc + 2);
+    }
+
+    #[test]
+    fn test_skip_ne_vxb() {
+        let mut chip = Chip8::new();
+        chip.pc = 0x0111;
+
+        // test skip not equal
+        let previous_pc = chip.pc;
+        chip.v[2] = 0x11;
+        chip.opcode = 0x4244;
+        chip.process_opcode();
+        assert_eq!(chip.pc, previous_pc + 2);
+
+        let previous_pc = chip.pc;
+        chip.v[2] = 0x44;
+        chip.process_opcode();
+        assert_eq!(chip.pc, previous_pc);
+    }
+
+    #[test]
+    fn test_skip_eq_vxvy() {
+        let mut chip = Chip8::new();
+        chip.pc = 0x0111;
+
+        // test skip equal
+        let previous_pc = chip.pc;
+        chip.v[2] = 0x11;
+        chip.v[3] = 0x11;
+        chip.opcode = 0x5230;
+        chip.process_opcode();
+        assert_eq!(chip.pc, previous_pc + 2);
+
+        let previous_pc = chip.pc;
+        chip.v[2] = 0xff;
+        chip.v[3] = 0x11;
+        chip.opcode = 0x5230;
+        chip.process_opcode();
+        assert_eq!(chip.pc, previous_pc);
+    }
+
+    #[test]
+    fn test_skip_ne_vxvy() {
+        let mut chip = Chip8::new();
+        chip.pc = 0x0111;
+
+        // test skip equal
+        let previous_pc = chip.pc;
+        chip.v[2] = 0x11;
+        chip.v[3] = 0x11;
+        chip.opcode = 0x9230;
+        chip.process_opcode();
+        assert_eq!(chip.pc, previous_pc);
+
+        let previous_pc = chip.pc;
+        chip.v[2] = 0xff;
+        chip.v[3] = 0x11;
+        chip.opcode = 0x9230;
+        chip.process_opcode();
+        assert_eq!(chip.pc, previous_pc + 2);
+    }
+
+    #[test]
+    fn test_set_vxkk() {
+        let mut chip = Chip8::new();
+        chip.pc = 0x0111;
+
+        // test skip equal
+        chip.v[2] = 0x3;
+        chip.opcode = 0x6240;
+        chip.process_opcode();
+        assert_eq!(chip.v[2], 0x40);
+    }
+
+    #[test]
+    fn test_add_vxkk() {
+        let mut chip = Chip8::new();
+        chip.pc = 0x0111;
+
+        // test skip equal
+        chip.v[2] = 0x3;
+        let previous_v2 = chip.v[2];
+        chip.opcode = 0x7240;
+        chip.process_opcode();
+        assert_eq!(chip.v[2], previous_v2 + 0x40);
+    }
+
+    #[test]
+    fn test_vxvy() {
+        let mut chip = Chip8::new();
+        let mut rng = thread_rng();
+        let tries = 10;
+        chip.pc = 0x0111;
+
+        // test set vx vy
+
+        for _ in 0..tries {
+            chip.v[4] = rng.gen_range(0, 255);
+            chip.v[2] = rng.gen_range(0, 255);
+            chip.opcode = 0x8240;
+            chip.process_opcode();
+            assert_eq!(chip.v[2], chip.v[4]);
+        }
+
+        // test or vx vy
+        for _ in 0..tries {
+            chip.v[4] = rng.gen_range(0, 255);
+            chip.v[2] = rng.gen_range(0, 255);
+            let previous_vx = chip.v[2];
+            chip.opcode = 0x8241;
+            chip.process_opcode();
+            assert_eq!(chip.v[2], previous_vx | chip.v[4]);
+        }
+
+        // test and vx vy
+        for _ in 0..tries {
+            chip.v[4] = rng.gen_range(0, 255);
+            chip.v[2] = rng.gen_range(0, 255);
+            let previous_vx = chip.v[2];
+            chip.opcode = 0x8242;
+            chip.process_opcode();
+            assert_eq!(chip.v[2], previous_vx & chip.v[4]);
+        }
+
+        // test and vx vy
+        for _ in 0..tries {
+            chip.v[4] = rng.gen_range(0, 255);
+            chip.v[2] = rng.gen_range(0, 255);
+            let previous_vx = chip.v[2];
+            chip.opcode = 0x8243;
+            chip.process_opcode();
+            assert_eq!(chip.v[2], previous_vx ^ chip.v[4]);
+        }
+
+        // test vx add vy
+        for _ in 0..tries {
+            chip.v[4] = rng.gen_range(0, 255);
+            chip.v[2] = rng.gen_range(0, 255);
+            let previous_vx = chip.v[2];
+            chip.opcode = 0x8244;
+            chip.process_opcode();
+            let (res, carry) = previous_vx.overflowing_add(chip.v[4]);
+            assert_eq!(chip.v[2], res);
+            assert_eq!(
+                chip.v[0xf],
+                match carry {
+                    true => 1,
+                    false => 0,
+                }
+            );
+        }
+
+        // test vx sub vy
+        for _ in 0..tries {
+            chip.v[4] = rng.gen_range(0, 255);
+            chip.v[2] = rng.gen_range(0, 255);
+            chip.opcode = 0x8245;
+            let vf = match chip.v[2] > chip.v[4] {
+                true => 1,
+                false => 0,
+            };
+            let res = chip.v[2].wrapping_sub(chip.v[4]);
+            chip.process_opcode();
+            assert_eq!(chip.v[2], res);
+            assert_eq!(
+                chip.v[0xf],
+                vf
+            );
+        }
+
+        // test and vx vy
+        for _ in 0..tries {
+            chip.v[4] = rng.gen_range(0, 255);
+            chip.v[2] = rng.gen_range(0, 255);
+            chip.opcode = 0x8245;
+            let vf = match chip.v[2] > chip.v[4] {
+                true => 1,
+                false => 0,
+            };
+            let res = chip.v[2].wrapping_sub(chip.v[4]);
+            chip.process_opcode();
+            assert_eq!(chip.v[2], res);
+            assert_eq!(
+                chip.v[0xf],
+                vf
+            );
+        }
+    }
+
 }

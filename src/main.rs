@@ -7,10 +7,12 @@ use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 
 pub fn main() {
-    let mut chip = Chip8::new();
     let mut game = Game::initialize();
+    let mut chip = Chip8::new();
 
     println!("entering loop");
+    chip.test_drawing();
+    println!("{}", chip.gfx[0]);
     'running: loop {
         for event in game.get_events() {
             match event {
@@ -19,12 +21,9 @@ pub fn main() {
                     keycode: Some(Keycode::Escape),
                     ..
                 } => break 'running,
-                _ => {
-
-                }
+                _ => {}
             }
         }
-        chip.cycle();
         game.draw(&chip.gfx);
     }
     println!("exited loop");
