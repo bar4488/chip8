@@ -44,19 +44,79 @@ impl Chip8 {
             sp: 0,
             stack: [0u16; 16],
             gfx: [false; 64 * 32],
-            memory: [0; 4096],
+            memory: Chip8::init_memory(),
             keyboard: [false; 16],
         }
     }
 
+    fn init_memory() -> [u8; 4096] {
+        let mut mem = [0; 4096];
+        Chip8::load_digits(&mut mem);
+        mem
+    }
+
+    fn load_digits(mem: &mut [u8; 4096]) {
+        // load 0 digit
+        mem[0x0..0x5].clone_from_slice(&[0xf0, 0x90, 0x90, 0x90, 0xf0]);
+
+        // load 1 digit
+        mem[0x5..0xa].clone_from_slice(&[0x20, 0x60, 0x20, 0x20, 0x70]);
+
+        // load 2 digit
+        mem[0xa..0xf].clone_from_slice(&[0xf0, 0x10, 0xf0, 0x80, 0xf0]);
+
+        // load 3 digit
+        mem[0xf..0x14].clone_from_slice(&[0xf0, 0x10, 0xf0, 0x10, 0xf0]);
+
+        // load 4 digit
+        mem[0x14..0x19].clone_from_slice(&[0x90, 0x90, 0xf0, 0x10, 0x10]);
+
+        // load 4 digit
+        mem[0x19..0x1e].clone_from_slice(&[0x90, 0x90, 0xf0, 0x10, 0x10]);
+
+        // load 5 digit
+        mem[0x1e..0x23].clone_from_slice(&[0xf0, 0x80, 0xf0, 0x10, 0xf0]);
+
+        // load 6 digit
+        mem[0x23..0x28].clone_from_slice(&[0xf0, 0x80, 0xf0, 0x90, 0xf0]);
+
+        // load 7 digit
+        mem[0x28..0x2d].clone_from_slice(&[0xf0, 0x10, 0x20, 0x40, 0x40]);
+
+        // load 8 digit
+        mem[0x2d..0x32].clone_from_slice(&[0xf0, 0x90, 0xf0, 0x90, 0xf0]);
+
+        // load 9 digit
+        mem[0x32..0x37].clone_from_slice(&[0xf0, 0x90, 0xf0, 0x10, 0xf0]);
+
+        // load a digit
+        mem[0x37..0x3c].clone_from_slice(&[0xf0, 0x90, 0xf0, 0x90, 0x90]);
+
+        // load b digit
+        mem[0x3c..0x41].clone_from_slice(&[0xe0, 0x90, 0xe0, 0x90, 0xe0]);
+
+        // load c digit
+        mem[0x41..0x46].clone_from_slice(&[0xf0, 0x80, 0x80, 0x90, 0xf0]);
+
+        // load d digit
+        mem[0x46..0x4b].clone_from_slice(&[0xe0, 0x90, 0x90, 0x90, 0xe0]);
+
+        // load e digit
+        mem[0x4b..0x50].clone_from_slice(&[0xf0, 0x80, 0xf0, 0x80, 0xf0]);
+
+        // load f digit
+        mem[0x50..0x55].clone_from_slice(&[0xf0, 0x80, 0xf0, 0x80, 0x80]);
+    }
+
     pub fn test_drawing(&mut self) {
-        let sprite = [0b00011111, 0b00010101, 0b00011011, 0b00010101, 0b00011111];
-        self.index = 0x10;
-        self.memory[0x10..0x15].clone_from_slice(&sprite);
-        self.opcode = 0xd015;
-        self.v[0] = 0x5;
-        self.v[1] = 0x3;
-        self.process_opcode();
+        for i in 0..=0xf {
+            self.opcode = 0xf029 + (i << 8);
+            self.process_opcode();
+            self.opcode = 0xd015;
+            self.v[0] = (i as u8) * 0xf;
+            self.v[1] = 0x3;
+            self.process_opcode();
+        }
     }
 
     pub fn cycle(&mut self) {
@@ -215,7 +275,12 @@ impl Chip8 {
                             self.v[0xf] = 1;
                         }
                         self.gfx[gy * 64 + gx] = self.gfx[gy * 64 + gx] ^ pixel;
-                        println!("drawing at x: {}, y: {}", gx, gy);
+                        println!(
+                            "{}: drawing at x: {}, y: {}",
+                            self.gfx[gy * 64 + gx],
+                            gx,
+                            gy
+                        );
                     }
                 }
             }

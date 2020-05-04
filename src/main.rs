@@ -12,7 +12,6 @@ pub fn main() {
 
     println!("entering loop");
     chip.test_drawing();
-    println!("{}", chip.gfx[0]);
     'running: loop {
         for event in game.get_events() {
             match event {
