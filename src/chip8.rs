@@ -3,7 +3,7 @@ extern crate rand;
 use rand::Rng;
 use std::time::Instant;
 
-const PROGRAM_START_LOCATION: usize = 40 * 10;
+const PROGRAM_START_LOCATION: usize = 0x200;
 
 #[allow(dead_code)]
 pub struct Chip8 {
@@ -40,13 +40,19 @@ pub struct Chip8 {
 
 #[allow(dead_code)]
 impl Chip8 {
+    pub fn load(program: Vec<u8>) -> Chip8 {
+        let mut chip = Chip8::new();
+        chip.load_instructions(&program[..]);
+        chip
+    }
+
     pub fn new() -> Chip8 {
         Chip8 {
             opcode: 0,
             v: [0; 16],
             delay_timer: 0,
             index: 0,
-            pc: 0,
+            pc: PROGRAM_START_LOCATION as u16,
             sound_timer: 0,
             sp: 0,
             stack: [0u16; 16],
@@ -66,55 +72,55 @@ impl Chip8 {
 
     fn load_digits(mem: &mut [u8; 4096]) {
         // load 0 digit
-        mem[0x0..0x5].clone_from_slice(&[0xf0, 0x90, 0x90, 0x90, 0xf0]);
+        mem[0x0..0x5].copy_from_slice(&[0xf0, 0x90, 0x90, 0x90, 0xf0]);
 
         // load 1 digit
-        mem[0x5..0xa].clone_from_slice(&[0x20, 0x60, 0x20, 0x20, 0x70]);
+        mem[0x5..0xa].copy_from_slice(&[0x20, 0x60, 0x20, 0x20, 0x70]);
 
         // load 2 digit
-        mem[0xa..0xf].clone_from_slice(&[0xf0, 0x10, 0xf0, 0x80, 0xf0]);
+        mem[0xa..0xf].copy_from_slice(&[0xf0, 0x10, 0xf0, 0x80, 0xf0]);
 
         // load 3 digit
-        mem[0xf..0x14].clone_from_slice(&[0xf0, 0x10, 0xf0, 0x10, 0xf0]);
+        mem[0xf..0x14].copy_from_slice(&[0xf0, 0x10, 0xf0, 0x10, 0xf0]);
 
         // load 4 digit
-        mem[0x14..0x19].clone_from_slice(&[0x90, 0x90, 0xf0, 0x10, 0x10]);
+        mem[0x14..0x19].copy_from_slice(&[0x90, 0x90, 0xf0, 0x10, 0x10]);
 
         // load 4 digit
-        mem[0x19..0x1e].clone_from_slice(&[0x90, 0x90, 0xf0, 0x10, 0x10]);
+        mem[0x19..0x1e].copy_from_slice(&[0x90, 0x90, 0xf0, 0x10, 0x10]);
 
         // load 5 digit
-        mem[0x1e..0x23].clone_from_slice(&[0xf0, 0x80, 0xf0, 0x10, 0xf0]);
+        mem[0x1e..0x23].copy_from_slice(&[0xf0, 0x80, 0xf0, 0x10, 0xf0]);
 
         // load 6 digit
-        mem[0x23..0x28].clone_from_slice(&[0xf0, 0x80, 0xf0, 0x90, 0xf0]);
+        mem[0x23..0x28].copy_from_slice(&[0xf0, 0x80, 0xf0, 0x90, 0xf0]);
 
         // load 7 digit
-        mem[0x28..0x2d].clone_from_slice(&[0xf0, 0x10, 0x20, 0x40, 0x40]);
+        mem[0x28..0x2d].copy_from_slice(&[0xf0, 0x10, 0x20, 0x40, 0x40]);
 
         // load 8 digit
-        mem[0x2d..0x32].clone_from_slice(&[0xf0, 0x90, 0xf0, 0x90, 0xf0]);
+        mem[0x2d..0x32].copy_from_slice(&[0xf0, 0x90, 0xf0, 0x90, 0xf0]);
 
         // load 9 digit
-        mem[0x32..0x37].clone_from_slice(&[0xf0, 0x90, 0xf0, 0x10, 0xf0]);
+        mem[0x32..0x37].copy_from_slice(&[0xf0, 0x90, 0xf0, 0x10, 0xf0]);
 
         // load a digit
-        mem[0x37..0x3c].clone_from_slice(&[0xf0, 0x90, 0xf0, 0x90, 0x90]);
+        mem[0x37..0x3c].copy_from_slice(&[0xf0, 0x90, 0xf0, 0x90, 0x90]);
 
         // load b digit
         mem[0x3c..0x41].copy_from_slice(&[0xe0, 0x90, 0xe0, 0x90, 0xe0]);
 
         // load c digit
-        mem[0x41..0x46].clone_from_slice(&[0xf0, 0x80, 0x80, 0x90, 0xf0]);
+        mem[0x41..0x46].copy_from_slice(&[0xf0, 0x80, 0x80, 0x90, 0xf0]);
 
         // load d digit
-        mem[0x46..0x4b].clone_from_slice(&[0xe0, 0x90, 0x90, 0x90, 0xe0]);
+        mem[0x46..0x4b].copy_from_slice(&[0xe0, 0x90, 0x90, 0x90, 0xe0]);
 
         // load e digit
-        mem[0x4b..0x50].clone_from_slice(&[0xf0, 0x80, 0xf0, 0x80, 0xf0]);
+        mem[0x4b..0x50].copy_from_slice(&[0xf0, 0x80, 0xf0, 0x80, 0xf0]);
 
         // load f digit
-        mem[0x50..0x55].clone_from_slice(&[0xf0, 0x80, 0xf0, 0x80, 0x80]);
+        mem[0x50..0x55].copy_from_slice(&[0xf0, 0x80, 0xf0, 0x80, 0x80]);
     }
 
     pub fn test_drawing(&mut self) {
@@ -132,7 +138,7 @@ impl Chip8 {
 
     pub fn load_instructions(&mut self, instructions: &[u8]) {
         let program_memory = &mut self.memory[PROGRAM_START_LOCATION..];
-        program_memory.clone_from_slice(&instructions);
+        program_memory[..instructions.len()].copy_from_slice(&instructions);
     }
 
     pub fn get_sound_timer(&self) -> u8 {
@@ -392,11 +398,11 @@ impl Chip8 {
                     }
                     0x55 => {
                         let i = self.index as usize;
-                        self.memory[i..=(i + x)].clone_from_slice(&self.v[0..=x]);
+                        self.memory[i..=(i + x)].copy_from_slice(&self.v[0..=x]);
                     }
                     0x65 => {
                         let i = self.index as usize;
-                        self.v[0..=x].clone_from_slice(&self.memory[i..=(i + x)]);
+                        self.v[0..=x].copy_from_slice(&self.memory[i..=(i + x)]);
                     }
                     _ => {
                         //panic!("unimplemented opcode: {}", self.opcode);
