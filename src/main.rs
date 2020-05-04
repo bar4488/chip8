@@ -11,7 +11,6 @@ pub fn main() {
     let mut chip = Chip8::new();
 
     println!("entering loop");
-    chip.test_drawing();
     println!("{}", chip.gfx[0]);
     'running: loop {
         for event in game.get_events() {
@@ -24,6 +23,7 @@ pub fn main() {
                 _ => {}
             }
         }
+        chip.cycle();
         game.draw(&chip.gfx);
     }
     println!("exited loop");
