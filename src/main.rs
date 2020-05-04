@@ -23,6 +23,7 @@ pub fn main() {
                 _ => {}
             }
         }
+        //chip.cycle();
         game.draw(&chip.gfx);
     }
     println!("exited loop");

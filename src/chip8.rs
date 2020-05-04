@@ -1,6 +1,9 @@
 extern crate rand;
 
-use rand::{prelude::ThreadRng, thread_rng, Rng};
+use rand::Rng;
+use std::time::Instant;
+
+const PROGRAM_START_LOCATION: usize = 40 * 10;
 
 #[allow(dead_code)]
 pub struct Chip8 {
@@ -18,6 +21,10 @@ pub struct Chip8 {
     delay_timer: u8,
     // decrements at a rate of 60 hz, when not 0, a buzzer will sound
     sound_timer: u8,
+
+    // variables that save the time in milliseconds since the delta or sound timer were set.
+    delay_set_time: Option<Instant>,
+    sound_set_time: Option<Instant>,
 
     // stores the address that the interpreter should return
     // to when finished with a subroutine
@@ -46,6 +53,8 @@ impl Chip8 {
             gfx: [false; 64 * 32],
             memory: Chip8::init_memory(),
             keyboard: [false; 16],
+            delay_set_time: None,
+            sound_set_time: None,
         }
     }
 
@@ -110,22 +119,59 @@ impl Chip8 {
 
     pub fn test_drawing(&mut self) {
         for i in 0..=0xf {
-            self.opcode = 0xf029 + (i << 8);
+            self.opcode = 0xf029;
+            self.v[0] = i;
             self.process_opcode();
             self.opcode = 0xd015;
-            self.v[0] = (i as u8) * 0xf;
-            self.v[1] = 0x3;
+            self.v[0] = 0x3 + (i as u8).wrapping_mul(0x10);
+            println!("{}: {}", i, i/5);
+            self.v[1] = 0x3 + (i/4 as u8).wrapping_mul(0x6);
             self.process_opcode();
         }
     }
 
+    pub fn load_instructions(&mut self, instructions: &[u8]) {
+        let program_memory = &mut self.memory[PROGRAM_START_LOCATION..];
+        program_memory.clone_from_slice(&instructions);
+    }
+
+    pub fn get_sound_timer(&self) -> u8 {
+        if let Some(elapsed) = self.sound_set_time {
+            let delta = (elapsed.elapsed().as_millis() * 60 / 1000) as u8;
+            if delta > self.sound_timer {
+                0
+            } else {
+                self.sound_timer - delta
+            }
+        } else {
+            0
+        }
+    }
+
+    pub fn get_delay_timer(&self) -> u8 {
+        if let Some(elapsed) = self.delay_set_time {
+            let delta = (elapsed.elapsed().as_millis() * 60 / 1000) as u8;
+            if delta > self.delay_timer {
+                0
+            } else {
+                self.delay_timer - delta
+            }
+        } else {
+            0
+        }
+    }
+
     pub fn cycle(&mut self) {
-        let mut rng = rand::thread_rng();
-        let i = rng.gen_range(0, 64 * 32);
-        self.gfx[i] = !self.gfx[i];
+        // read current opcode from memory to self.opcode
+        self.opcode = ((self.memory[self.pc as usize] as u16) << 8)
+            + self.memory[self.pc as usize + 1] as u16;
+        // process opcode
+        self.process_opcode();
     }
 
     fn process_opcode(&mut self) {
+        println!("processing opcode: {:#x?}", self.opcode);
+        self.pc += 2;
         match self.opcode {
             0x00e0 => {
                 self.gfx = [false; 64 * 32];
@@ -192,7 +238,8 @@ impl Chip8 {
                 println!("set v{} to {}", self.opcode & 0x0f00, self.opcode & 0x00ff);
             }
             0x7000..=0x7fff => {
-                self.v[((self.opcode & 0x0f00) >> 8) as usize] += (self.opcode & 0x00ff) as u8;
+                self.v[((self.opcode & 0x0f00) >> 8) as usize]
+                    .wrapping_add((self.opcode & 0x00ff) as u8);
                 println!("set v{} to {}", self.opcode & 0x0f00, self.opcode & 0x00ff);
             }
             0x8000..=0x8fff => {
@@ -270,7 +317,7 @@ impl Chip8 {
                         let gx = (x as usize + xx) % 64;
                         let gy = (y as usize + yy) % 32;
 
-                        let pixel = (sprite[yy] & (1 << xx)) != 0;
+                        let pixel = (sprite[yy] & (1 << (7 - xx))) != 0;
                         if self.gfx[gy * 64 + gx] {
                             self.v[0xf] = 1;
                         }
@@ -297,33 +344,64 @@ impl Chip8 {
                             self.pc += 2;
                         }
                     }
-                    _ => {}
+                    _ => {
+                        //panic!("unimplemented opcode: {}", self.opcode);
+                    }
                 }
             }
             0xf000..=0xffff => {
-                let x = (self.opcode & 0x0f00 >> 8) as usize;
+                let x = ((self.opcode & 0x0f00) >> 8) as usize;
+
                 match self.opcode & 0x00ff {
                     0x07 => {
-                        self.v[x] = self.delay_timer;
+                        self.v[x] = self.get_delay_timer();
                     }
                     0x0a => {
                         // wait for a key press
+                        // TODO: add logic to suspend program execution while no key is pressed
                         if self.keyboard.contains(&true) {
                             self.v[x] = self.keyboard.iter().position(|&x| x).unwrap() as u8;
+                        } else {
+                            // return the program counter so it will stay on the current instruction if theres no key pressed
+                            self.pc -= 0;
                         }
                     }
-                    0x15 => {}
-                    0x18 => {}
-                    0x1e => {}
-                    0x29 => {}
-                    0x33 => {}
-                    0x55 => {}
-                    0x65 => {}
-                    _ => {}
+                    0x15 => {
+                        self.delay_timer = self.v[x];
+                        self.delay_set_time = Some(Instant::now());
+                    }
+                    0x18 => {
+                        self.sound_timer = self.v[x];
+                        self.sound_set_time = Some(Instant::now());
+                    }
+                    0x1e => {
+                        self.index += self.v[x] as u16;
+                    }
+                    0x29 => {
+                        println!("{}: {}", x, self.v[x]);
+                        self.index = (self.v[x] as u16) * 5;
+                    }
+                    0x33 => {
+                        let hundrents = self.v[x] / 100;
+                        let tens = (self.v[x] / 10) % 10;
+                        let ones = self.v[x] % 10;
+
+                        self.memory[self.index as usize] = hundrents;
+                        self.memory[self.index as usize + 1] = tens;
+                        self.memory[self.index as usize + 2] = ones;
+                    }
+                    0x55 => {
+                        let i = self.index as usize;
+                        self.memory[i..=(i + x)].clone_from_slice(&self.v[0..=x]);
+                    }
+                    0x65 => {
+                        let i = self.index as usize;
+                        self.v[0..=x].clone_from_slice(&self.memory[i..=(i + x)]);
+                    }
+                    _ => {
+                        //panic!("unimplemented opcode: {}", self.opcode);
+                    }
                 }
-            }
-            _ => {
-                panic!("unimplemented opcode: {}", self.opcode);
             }
         }
     }
@@ -358,55 +436,58 @@ mod tests {
     #[test]
     fn test__subroutine() {
         let mut chip = Chip8::new();
-        chip.pc = 0x0111;
 
         // test calling a subroutine
+        chip.pc = 0x0111;
         let previous_pc = chip.pc;
         chip.opcode = 0x2123;
         chip.process_opcode();
         assert_eq!(chip.pc, 0x0123);
         assert_eq!(chip.sp, 1);
-        assert_eq!(chip.stack[(chip.sp - 1) as usize], previous_pc);
+        assert_eq!(chip.stack[(chip.sp - 1) as usize], previous_pc + 2);
 
         // test returning from a subroutine
         chip.opcode = 0x00ee;
+        chip.pc = 0x0111;
         chip.process_opcode();
-        assert_eq!(chip.pc, 0x0111);
+        assert_eq!(chip.pc, 0x0111 + 2);
         assert_eq!(chip.sp, 0);
     }
 
     #[test]
     fn test_skip_equal_vxb() {
         let mut chip = Chip8::new();
-        chip.pc = 0x0111;
 
         // test skip equal
+        chip.pc = 0x0111;
         let previous_pc = chip.pc;
         chip.opcode = 0x3244;
         chip.process_opcode();
-        assert_eq!(chip.pc, previous_pc);
+        assert_eq!(chip.pc, previous_pc + 2);
 
         chip.v[2] = 0x44;
+        chip.pc = 0x0111;
         chip.process_opcode();
-        assert_eq!(chip.pc, previous_pc + 2);
+        assert_eq!(chip.pc, previous_pc + 4);
     }
 
     #[test]
     fn test_skip_ne_vxb() {
         let mut chip = Chip8::new();
-        chip.pc = 0x0111;
 
         // test skip not equal
+        chip.pc = 0x0111;
         let previous_pc = chip.pc;
         chip.v[2] = 0x11;
         chip.opcode = 0x4244;
         chip.process_opcode();
-        assert_eq!(chip.pc, previous_pc + 2);
+        assert_eq!(chip.pc, previous_pc + 4);
 
+        chip.pc = 0x0111;
         let previous_pc = chip.pc;
         chip.v[2] = 0x44;
         chip.process_opcode();
-        assert_eq!(chip.pc, previous_pc);
+        assert_eq!(chip.pc, previous_pc + 2);
     }
 
     #[test]
@@ -415,19 +496,21 @@ mod tests {
         chip.pc = 0x0111;
 
         // test skip equal
+        chip.pc = 0x0111;
         let previous_pc = chip.pc;
         chip.v[2] = 0x11;
         chip.v[3] = 0x11;
         chip.opcode = 0x5230;
         chip.process_opcode();
-        assert_eq!(chip.pc, previous_pc + 2);
+        assert_eq!(chip.pc, previous_pc + 4);
 
+        chip.pc = 0x0111;
         let previous_pc = chip.pc;
         chip.v[2] = 0xff;
         chip.v[3] = 0x11;
         chip.opcode = 0x5230;
         chip.process_opcode();
-        assert_eq!(chip.pc, previous_pc);
+        assert_eq!(chip.pc, previous_pc + 2);
     }
 
     #[test]
@@ -441,14 +524,14 @@ mod tests {
         chip.v[3] = 0x11;
         chip.opcode = 0x9230;
         chip.process_opcode();
-        assert_eq!(chip.pc, previous_pc);
+        assert_eq!(chip.pc, previous_pc + 2);
 
         let previous_pc = chip.pc;
         chip.v[2] = 0xff;
         chip.v[3] = 0x11;
         chip.opcode = 0x9230;
         chip.process_opcode();
-        assert_eq!(chip.pc, previous_pc + 2);
+        assert_eq!(chip.pc, previous_pc + 4);
     }
 
     #[test]
@@ -479,7 +562,7 @@ mod tests {
     #[test]
     fn test_vxvy() {
         let mut chip = Chip8::new();
-        let mut rng = thread_rng();
+        let mut rng = rand::thread_rng();
         let tries = 10;
         chip.pc = 0x0111;
 
